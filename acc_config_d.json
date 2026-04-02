@@ -1,0 +1,14 @@
+{
+    "community": {
+        "name": "F2R",
+        "description": "Freedom To Tide",
+        "slogan": "Ride Free - BEAT TIME"
+    },
+    "social": {
+        "discord": "https://discord.gg/bfcXXxbck8",
+        "simgrid": "https://www.thesimgrid.com/communities/freedom-to-ride-f2r"
+    },	
+    "database": {
+        "path": "acc_stats.db"
+    }
+}
