@@ -634,7 +634,7 @@ class ACCWebDashboard:
             cursor: pointer;">
 <p style="color: white; font-size: 1.3rem; font-weight: 700; margin: 0;
           text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.3);">
-📖 Download TFL3 Rulebook
+📖 Download Rulebook
 </p>
 </div>
 </a>
