@@ -1,0 +1,14 @@
+{
+    "community": {
+        "name": "TFL - Team Friends League",
+        "description": "by Freedom To Ride",
+        "slogan": "Passione, velocità e competizione"
+    },
+    "social": {
+        "discord": "https://www.discord.gg/3bnHT3gGbq",
+        "simgrid": "https://www.thesimgrid.com/communities/freedom-to-ride-f2r"
+    },	
+    "database": {
+        "path": "acc_stats.db"
+    }
+}
