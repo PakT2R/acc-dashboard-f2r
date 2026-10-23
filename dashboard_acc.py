@@ -3252,7 +3252,7 @@ Download Rulebook
             LIMIT 5
         '''
 
-        # 2. Più record pista detenuti
+        # 2. Più record pista detenuti (solo sessioni ufficiali, come Best Laps)
         records_query = '''
             SELECT d.last_name as driver, COUNT(*) as count
             FROM (
@@ -3261,12 +3261,14 @@ Download Rulebook
                 JOIN sessions s ON l.session_id = s.session_id
                 JOIN drivers d ON l.driver_id = d.driver_id
                 WHERE l.is_valid_for_best = 1 AND l.lap_time > 0 AND d.trust_level >= 1
+                  AND s.competition_id IS NOT NULL
                 GROUP BY s.track_name
             ) tr
             JOIN laps l ON l.lap_time = tr.record_time
             JOIN sessions s ON l.session_id = s.session_id AND s.track_name = tr.track_name
             JOIN drivers d ON l.driver_id = d.driver_id
             WHERE d.trust_level >= 1 AND l.is_valid_for_best = 1
+              AND s.competition_id IS NOT NULL
             GROUP BY l.driver_id
             ORDER BY count DESC
             LIMIT 5
@@ -3454,7 +3456,18 @@ Download Rulebook
                 WHERE l.driver_id = ? AND l.is_valid_for_best = 1 AND l.lap_time > 0
                 GROUP BY s.track_name
             ),
+            driver_official_bests AS (
+                SELECT
+                    s.track_name,
+                    MIN(l.lap_time) as best_official_lap
+                FROM laps l
+                JOIN sessions s ON l.session_id = s.session_id
+                WHERE l.driver_id = ? AND l.is_valid_for_best = 1 AND l.lap_time > 0
+                  AND s.competition_id IS NOT NULL
+                GROUP BY s.track_name
+            ),
             track_records AS (
+                -- Record pista: solo sessioni ufficiali, come Best Laps
                 SELECT
                     s.track_name,
                     MIN(l.lap_time) as track_record
@@ -3462,6 +3475,7 @@ Download Rulebook
                 JOIN sessions s ON l.session_id = s.session_id
                 JOIN drivers d ON l.driver_id = d.driver_id
                 WHERE l.is_valid_for_best = 1 AND l.lap_time > 0
+                  AND s.competition_id IS NOT NULL
                   AND d.trust_level >= 1
                 GROUP BY s.track_name
             )
@@ -3473,17 +3487,18 @@ Download Rulebook
                 s.session_type,
                 s.competition_id,
                 s.is_time_attack,
-                CASE WHEN dtb.best_lap = tr.track_record THEN 1 ELSE 0 END as is_record
+                CASE WHEN dob.best_official_lap = tr.track_record THEN 1 ELSE 0 END as is_record
             FROM driver_track_bests dtb
             JOIN laps l ON dtb.best_lap = l.lap_time
             JOIN sessions s ON l.session_id = s.session_id AND s.track_name = dtb.track_name
-            JOIN track_records tr ON dtb.track_name = tr.track_name
+            LEFT JOIN driver_official_bests dob ON dtb.track_name = dob.track_name
+            LEFT JOIN track_records tr ON dtb.track_name = tr.track_name
             WHERE l.driver_id = ? AND l.is_valid_for_best = 1
             GROUP BY dtb.track_name
             ORDER BY s.session_date DESC
         '''
 
-        return self.safe_sql_query(query, [driver_id, driver_id])
+        return self.safe_sql_query(query, [driver_id, driver_id, driver_id])
 
     def get_driver_tracks_list(self, driver_id: int) -> List[str]:
         """Restituisce le piste su cui il pilota ha giri validi"""
