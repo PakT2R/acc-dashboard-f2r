@@ -2669,10 +2669,11 @@ Download Rulebook
             st.error(f"❌ Errore nel recupero piste: {e}")
             return []
     
-    def get_all_tracks_summary(self, include_friends: bool = False) -> pd.DataFrame:
+    def get_all_tracks_summary(self, include_external: bool = False) -> pd.DataFrame:
         """Ottiene riepilogo record per tutte le piste (solo competizioni ufficiali e piloti TFL)"""
 
-        trust_filter = "d.trust_level >= 1" if include_friends else "d.trust_level > 1"
+        # Team + community di default, external opzionali
+        trust_filter = "d.trust_level >= 0" if include_external else "d.trust_level >= 1"
 
         query = f'''
             WITH track_records AS (
@@ -2713,14 +2714,16 @@ Download Rulebook
 
         return self.safe_sql_query(query)
     
-    def get_track_statistics(self, track_name: str) -> Dict:
+    def get_track_statistics(self, track_name: str, include_external: bool = False) -> Dict:
         """Ottiene statistiche generali per la pista (solo competizioni ufficiali e piloti TFL)"""
+        # Team + community di default, external opzionali
+        trust_filter = "d.trust_level >= 0" if include_external else "d.trust_level >= 1"
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
 
             # Statistiche generali
-            query = '''
+            query = f'''
                 SELECT
                     COUNT(DISTINCT s.session_id) as total_sessions,
                     COUNT(DISTINCT l.driver_id) as unique_drivers,
@@ -2736,7 +2739,7 @@ Download Rulebook
                   AND l.is_valid_for_best = 1
                   AND l.lap_time > 0
                   AND s.competition_id IS NOT NULL
-                  AND d.trust_level > 1
+                  AND {trust_filter}
             '''
 
             cursor.execute(query, (track_name,))
@@ -2746,7 +2749,7 @@ Download Rulebook
                 sessions, drivers, laps, best, avg, last_session, official_sessions = result
 
                 # Chi detiene il record e quando
-                record_query = '''
+                record_query = f'''
                     SELECT d.last_name, s.session_date
                     FROM laps l
                     JOIN drivers d ON l.driver_id = d.driver_id
@@ -2755,7 +2758,7 @@ Download Rulebook
                       AND l.lap_time = ?
                       AND l.is_valid_for_best = 1
                       AND s.competition_id IS NOT NULL
-                      AND d.trust_level > 1
+                      AND {trust_filter}
                     LIMIT 1
                 '''
 
@@ -2799,10 +2802,11 @@ Download Rulebook
             st.error(f"❌ Errore nel recupero statistiche pista: {e}")
             return {}
     
-    def get_track_leaderboard(self, track_name: str, include_friends: bool = False) -> pd.DataFrame:
+    def get_track_leaderboard(self, track_name: str, include_external: bool = False) -> pd.DataFrame:
         """Ottiene classifica best laps per pista (solo competizioni ufficiali e piloti TFL)"""
 
-        trust_filter = "d.trust_level >= 1" if include_friends else "d.trust_level > 1"
+        # Team + community di default, external opzionali
+        trust_filter = "d.trust_level >= 0" if include_external else "d.trust_level >= 1"
 
         query = f'''
             WITH driver_best_laps AS (
@@ -2882,7 +2886,7 @@ Download Rulebook
             st.markdown(f"""
             <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; border-left: 3px solid #6c757d; margin: 1rem 0;">
                 <p style="color: #495057; margin: 0 0 0.5rem 0; font-size: 0.95rem; font-weight: 500;">
-                    ℹ️ Only registered drivers shown - Join the TFL by registering on SimGrid or joining our Discord server
+                    ℹ️ Only 🏎️ team and 💬 community drivers shown by default - Join the TFL by registering on SimGrid or joining our Discord server
                 </p>
                 <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem 1rem; margin-top: 0.8rem;">
                     {''.join(social_links)}
@@ -2890,23 +2894,23 @@ Download Rulebook
             </div>
             """, unsafe_allow_html=True)
 
-        include_friends = st.checkbox("🤝 Include Friend Drivers", value=False, key="best_laps_include_friends")
+        include_external = st.checkbox("🌍 Include External Drivers", value=False, key="best_laps_include_external")
 
         if selected_track == "📊 General Summary":
             # Mostra riepilogo generale di tutte le piste
             st.markdown("---")
             st.subheader("🏁 Track Records Summary")
-            self.show_all_tracks_summary(include_friends)
+            self.show_all_tracks_summary(include_external)
 
         elif selected_track in tracks:
             # Mostra dettagli della pista specifica
             st.markdown("---")
-            self.show_track_details(selected_track, include_friends)
+            self.show_track_details(selected_track, include_external)
     
-    def show_all_tracks_summary(self, include_friends: bool = False):
+    def show_all_tracks_summary(self, include_external: bool = False):
         """Mostra riepilogo record per tutte le piste (solo competizioni ufficiali e piloti TFL)"""
 
-        summary_df = self.get_all_tracks_summary(include_friends)
+        summary_df = self.get_all_tracks_summary(include_external)
         
         if summary_df.empty:
             st.warning("⚠️ No data available for tracks summary")
@@ -3018,7 +3022,7 @@ Download Rulebook
         with col3:
             st.info(f"🎯 **{record_text}**")
     
-    def show_track_details(self, track_name: str, include_friends: bool = False):
+    def show_track_details(self, track_name: str, include_external: bool = False):
         """Mostra dettagli completi per la pista selezionata (solo competizioni ufficiali e piloti TFL)"""
 
         # Header pista
@@ -3029,7 +3033,7 @@ Download Rulebook
         """, unsafe_allow_html=True)
 
         # Ottieni statistiche generali
-        track_stats = self.get_track_statistics(track_name)
+        track_stats = self.get_track_statistics(track_name, include_external)
 
         if not any(track_stats.values()):
             st.warning("⚠️ No data available for this track")
@@ -3039,7 +3043,7 @@ Download Rulebook
         st.markdown("---")
         st.subheader("🏆 Best Laps Leaderboard by Driver")
 
-        leaderboard_df = self.get_track_leaderboard(track_name, include_friends)
+        leaderboard_df = self.get_track_leaderboard(track_name, include_external)
 
         if not leaderboard_df.empty:
             # Prepara display leaderboard
@@ -3211,9 +3215,9 @@ Download Rulebook
             cursor = conn.cursor()
             
             query = '''
-                SELECT DISTINCT d.driver_id, d.last_name, d.short_name
+                SELECT DISTINCT d.driver_id, d.last_name, d.short_name, d.trust_level
                 FROM drivers d
-                WHERE d.trust_level = 2
+                WHERE d.trust_level >= 1
                 ORDER BY LOWER(d.last_name)
             '''
             cursor.execute(query)
@@ -3222,7 +3226,8 @@ Download Rulebook
                 drivers.append({
                     'driver_id': row[0],
                     'last_name': row[1],
-                    'short_name': row[2]
+                    'short_name': row[2],
+                    'trust_level': row[3]
                 })
             
             conn.close()
@@ -3241,7 +3246,7 @@ Download Rulebook
             FROM championship_standings cs
             JOIN championships ch ON cs.championship_id = ch.championship_id
             JOIN drivers d ON cs.driver_id = d.driver_id
-            WHERE cs.position = 1 AND ch.is_completed = 1 AND d.trust_level = 2
+            WHERE cs.position = 1 AND ch.is_completed = 1 AND d.trust_level >= 1
             GROUP BY cs.driver_id
             ORDER BY count DESC
             LIMIT 5
@@ -3255,13 +3260,13 @@ Download Rulebook
                 FROM laps l
                 JOIN sessions s ON l.session_id = s.session_id
                 JOIN drivers d ON l.driver_id = d.driver_id
-                WHERE l.is_valid_for_best = 1 AND l.lap_time > 0 AND d.trust_level = 2
+                WHERE l.is_valid_for_best = 1 AND l.lap_time > 0 AND d.trust_level >= 1
                 GROUP BY s.track_name
             ) tr
             JOIN laps l ON l.lap_time = tr.record_time
             JOIN sessions s ON l.session_id = s.session_id AND s.track_name = tr.track_name
             JOIN drivers d ON l.driver_id = d.driver_id
-            WHERE d.trust_level = 2 AND l.is_valid_for_best = 1
+            WHERE d.trust_level >= 1 AND l.is_valid_for_best = 1
             GROUP BY l.driver_id
             ORDER BY count DESC
             LIMIT 5
@@ -3277,7 +3282,7 @@ Download Rulebook
             WHERE comp.is_completed = 1
               AND ch.total_rounds > 0
               AND ch.is_completed != -1
-              AND d.trust_level = 2
+              AND d.trust_level >= 1
               AND cst.total_points = (
                   SELECT MAX(cst2.total_points)
                   FROM competition_standings cst2
@@ -3299,7 +3304,7 @@ Download Rulebook
               AND s.session_type = 'R'
               AND comp.is_completed = 1
               AND (s.is_time_attack IS NULL OR s.is_time_attack = 0)
-              AND d.trust_level = 2
+              AND d.trust_level >= 1
             GROUP BY sr.driver_id
             ORDER BY count DESC
             LIMIT 5
@@ -3457,7 +3462,7 @@ Download Rulebook
                 JOIN sessions s ON l.session_id = s.session_id
                 JOIN drivers d ON l.driver_id = d.driver_id
                 WHERE l.is_valid_for_best = 1 AND l.lap_time > 0
-                  AND d.trust_level = 2
+                  AND d.trust_level >= 1
                 GROUP BY s.track_name
             )
             SELECT
@@ -3525,8 +3530,12 @@ Download Rulebook
             st.warning("❌ No drivers found in database")
             return
         
-        # Selectbox pilota con riepilogo generale come prima opzione
-        driver_options = ["📊 General Summary"] + [f"{driver['last_name']}" for driver in drivers]
+        # Selectbox pilota con riepilogo generale come prima opzione (🏎️ team, 💬 community)
+        driver_labels = {
+            f"{'🏎️' if driver['trust_level'] == 2 else '💬'} {driver['last_name']}": driver
+            for driver in drivers
+        }
+        driver_options = ["📊 General Summary"] + list(driver_labels)
         selected_driver = st.selectbox(
             "👤 Select Driver:",
             options=driver_options,
@@ -3550,7 +3559,7 @@ Download Rulebook
             st.markdown(f"""
             <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; border-left: 3px solid #6c757d; margin: 1rem 0;">
                 <p style="color: #495057; margin: 0 0 0.5rem 0; font-size: 0.95rem; font-weight: 500;">
-                    ℹ️ Only registered drivers shown - Join the TFL by registering on SimGrid or joining our Discord server
+                    ℹ️ Only 🏎️ team and 💬 community drivers shown - Join the TFL by registering on SimGrid or joining our Discord server
                 </p>
                 <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem 1rem; margin-top: 0.8rem;">
                     {''.join(social_links)}
@@ -3565,7 +3574,7 @@ Download Rulebook
             
         else:
             # Trova il pilota selezionato
-            selected_driver_data = next((d for d in drivers if d['last_name'] == selected_driver), None)
+            selected_driver_data = driver_labels.get(selected_driver)
             if selected_driver_data:
                 # Mostra dettagli del pilota specifico
                 st.markdown("---")
