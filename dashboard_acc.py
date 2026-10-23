@@ -534,13 +534,13 @@ class ACCWebDashboard:
                     social_buttons = []
 
                     if simgrid_url:
-                        social_buttons.append(f'<a href="{simgrid_url}" target="_blank" style="text-decoration: none; margin: 0 1rem;"><button style="background: linear-gradient(90deg, #5865f2, #7289da); color: white; border: none; padding: 0.8rem 1.5rem; border-radius: 25px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">🏆 SimGrid Community</button></a>')
+                        social_buttons.append(f'<a href="{simgrid_url}" target="_blank" style="text-decoration: none;"><button style="width: 240px; background: linear-gradient(90deg, #5865f2, #7289da); color: white; border: none; padding: 0.8rem 1.5rem; border-radius: 25px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">🏆 SimGrid Community</button></a>')
 
                     if discord_url:
-                        social_buttons.append(f'<a href="{discord_url}" target="_blank" style="text-decoration: none; margin: 0 1rem;"><button style="background: linear-gradient(90deg, #5865f2, #7289da); color: white; border: none; padding: 0.8rem 1.5rem; border-radius: 25px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">💬 Join Discord</button></a>')
+                        social_buttons.append(f'<a href="{discord_url}" target="_blank" style="text-decoration: none;"><button style="width: 240px; background: linear-gradient(90deg, #5865f2, #7289da); color: white; border: none; padding: 0.8rem 1.5rem; border-radius: 25px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">💬 Join Discord</button></a>')
 
                     st.markdown(f"""
-                    <div style="text-align: center; margin: 1rem 0;">
+                    <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem 2rem; margin: 1rem 0;">
                         {''.join(social_buttons)}
                     </div>
                     """, unsafe_allow_html=True)
@@ -565,13 +565,13 @@ class ACCWebDashboard:
                     social_buttons = []
 
                     if simgrid_url:
-                        social_buttons.append(f'<a href="{simgrid_url}" target="_blank" style="text-decoration: none; margin: 0 1rem;"><button style="background: linear-gradient(90deg, #5865f2, #7289da); color: white; border: none; padding: 0.8rem 1.5rem; border-radius: 25px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">🏆 SimGrid Community</button></a>')
+                        social_buttons.append(f'<a href="{simgrid_url}" target="_blank" style="text-decoration: none;"><button style="width: 240px; background: linear-gradient(90deg, #5865f2, #7289da); color: white; border: none; padding: 0.8rem 1.5rem; border-radius: 25px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">🏆 SimGrid Community</button></a>')
 
                     if discord_url:
-                        social_buttons.append(f'<a href="{discord_url}" target="_blank" style="text-decoration: none; margin: 0 1rem;"><button style="background: linear-gradient(90deg, #5865f2, #7289da); color: white; border: none; padding: 0.8rem 1.5rem; border-radius: 25px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">💬 Join Discord</button></a>')
+                        social_buttons.append(f'<a href="{discord_url}" target="_blank" style="text-decoration: none;"><button style="width: 240px; background: linear-gradient(90deg, #5865f2, #7289da); color: white; border: none; padding: 0.8rem 1.5rem; border-radius: 25px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">💬 Join Discord</button></a>')
 
                     st.markdown(f"""
-                    <div style="text-align: center; margin: 1rem 0;">
+                    <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem 2rem; margin: 1rem 0;">
                         {''.join(social_buttons)}
                     </div>
                     """, unsafe_allow_html=True)
@@ -799,7 +799,6 @@ Download Rulebook
                     c.track_name,
                     c.date_start,
                     c.date_end,
-                    c.weekend_format,
                     c.is_completed
                 FROM competitions c
                 WHERE c.championship_id = ?
@@ -832,7 +831,7 @@ Download Rulebook
 
             data = []
             next_marked = False
-            for round_num, name, track, date_start, date_end, weekend_format, is_completed in competitions:
+            for round_num, name, track, date_start, date_end, is_completed in competitions:
                 start = parse_date(date_start)
                 end = parse_date(date_end)
 
@@ -851,11 +850,10 @@ Download Rulebook
 
                 data.append({
                     "Round": f"R{round_num}" if round_num else "-",
-                    "Event": name,
                     "Track": track,
+                    "Event Name": name,
                     "From": format_date(date_start),
                     "To": format_date(date_end),
-                    "Format": weekend_format or "-",
                     "Status": status
                 })
 
@@ -2876,9 +2874,9 @@ Download Rulebook
         # Crea i link ai social in stile discreto
         social_links = []
         if simgrid_url:
-            social_links.append(f'<a href="{simgrid_url}" target="_blank" style="text-decoration: none; margin: 0 0.5rem;"><button style="background: #4a90e2; color: white; border: none; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.9rem; cursor: pointer; transition: opacity 0.2s;">🏆 SimGrid</button></a>')
+            social_links.append(f'<a href="{simgrid_url}" target="_blank" style="text-decoration: none;"><button style="width: 130px; background: #4a90e2; color: white; border: none; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.9rem; cursor: pointer; transition: opacity 0.2s;">🏆 SimGrid</button></a>')
         if discord_url:
-            social_links.append(f'<a href="{discord_url}" target="_blank" style="text-decoration: none; margin: 0 0.5rem;"><button style="background: #7289da; color: white; border: none; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.9rem; cursor: pointer; transition: opacity 0.2s;">💬 Discord</button></a>')
+            social_links.append(f'<a href="{discord_url}" target="_blank" style="text-decoration: none;"><button style="width: 130px; background: #7289da; color: white; border: none; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.9rem; cursor: pointer; transition: opacity 0.2s;">💬 Discord</button></a>')
 
         if social_links:
             st.markdown(f"""
@@ -2886,7 +2884,7 @@ Download Rulebook
                 <p style="color: #495057; margin: 0 0 0.5rem 0; font-size: 0.95rem; font-weight: 500;">
                     ℹ️ Only registered drivers shown - Join the TFL by registering on SimGrid or joining our Discord server
                 </p>
-                <div style="text-align: center; margin-top: 0.8rem;">
+                <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem 1rem; margin-top: 0.8rem;">
                     {''.join(social_links)}
                 </div>
             </div>
@@ -3544,9 +3542,9 @@ Download Rulebook
         # Crea i link ai social in stile discreto
         social_links = []
         if simgrid_url:
-            social_links.append(f'<a href="{simgrid_url}" target="_blank" style="text-decoration: none; margin: 0 0.5rem;"><button style="background: #4a90e2; color: white; border: none; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.9rem; cursor: pointer; transition: opacity 0.2s;">🏆 SimGrid</button></a>')
+            social_links.append(f'<a href="{simgrid_url}" target="_blank" style="text-decoration: none;"><button style="width: 130px; background: #4a90e2; color: white; border: none; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.9rem; cursor: pointer; transition: opacity 0.2s;">🏆 SimGrid</button></a>')
         if discord_url:
-            social_links.append(f'<a href="{discord_url}" target="_blank" style="text-decoration: none; margin: 0 0.5rem;"><button style="background: #7289da; color: white; border: none; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.9rem; cursor: pointer; transition: opacity 0.2s;">💬 Discord</button></a>')
+            social_links.append(f'<a href="{discord_url}" target="_blank" style="text-decoration: none;"><button style="width: 130px; background: #7289da; color: white; border: none; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.9rem; cursor: pointer; transition: opacity 0.2s;">💬 Discord</button></a>')
 
         if social_links:
             st.markdown(f"""
@@ -3554,7 +3552,7 @@ Download Rulebook
                 <p style="color: #495057; margin: 0 0 0.5rem 0; font-size: 0.95rem; font-weight: 500;">
                     ℹ️ Only registered drivers shown - Join the TFL by registering on SimGrid or joining our Discord server
                 </p>
-                <div style="text-align: center; margin-top: 0.8rem;">
+                <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem 1rem; margin-top: 0.8rem;">
                     {''.join(social_links)}
                 </div>
             </div>
@@ -3948,7 +3946,7 @@ def main():
                 "⏱️ Time Attack",
                 "🏁 Competitions",
                 "🏆 Standings",
-                "📅 All Sessions",
+                "📅 Sessions",
                 "⚡ Best Laps",
                 "👥 Drivers",
                 "📈 Statistics"
@@ -3971,7 +3969,7 @@ def main():
         elif page == "🏆 Standings":
             dashboard.show_leagues_report()
 
-        elif page == "📅 All Sessions":
+        elif page == "📅 Sessions":
             dashboard.show_sessions_report()
 
         elif page == "⚡ Best Laps":
