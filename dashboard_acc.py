@@ -716,9 +716,9 @@ Download Rulebook
         st.subheader("📊 Database Statistics")
 
         st.markdown(f"""
-        - 👥 **Registered Drivers:** {stats['total_drivers']}
-        - 🤝 **Friend Drivers:** {stats['friend_drivers']}
-        - 👻 **Guest Drivers:** {stats['guest_drivers']}
+        - 🏎️ **Team Drivers:** {stats['total_drivers']}
+        - 💬 **Community Drivers:** {stats['friend_drivers']}
+        - 🌍 **External Drivers:** {stats['guest_drivers']}
         - 🏆 **Championships:** {stats['total_championships']}
         - 🏁 **Competitions:** {stats['total_competitions']}
         - 🎮 **Total Sessions:** {stats['total_sessions']}
