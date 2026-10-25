@@ -16,6 +16,7 @@ from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
 from typing import Optional, Dict, List, Tuple
+from html import escape
 
 # Configurazione pagina
 st.set_page_config(
@@ -2669,11 +2670,16 @@ Download Rulebook
             st.error(f"❌ Errore nel recupero piste: {e}")
             return []
     
-    def get_all_tracks_summary(self, include_external: bool = False) -> pd.DataFrame:
-        """Ottiene riepilogo record per tutte le piste (solo competizioni ufficiali e piloti TFL)"""
+    def get_best_laps_session_filter(self, include_unofficial: bool = False) -> str:
+        """Filtro sessioni per Best Laps: solo ufficiali di default, tutte se richiesto"""
+        return "1 = 1" if include_unofficial else "s.competition_id IS NOT NULL"
+
+    def get_all_tracks_summary(self, include_external: bool = False, include_unofficial: bool = False) -> pd.DataFrame:
+        """Ottiene riepilogo best lap per tutte le piste (competizioni ufficiali e piloti TFL di default)"""
 
         # Team + community di default, external opzionali
         trust_filter = "d.trust_level >= 0" if include_external else "d.trust_level >= 1"
+        session_filter = self.get_best_laps_session_filter(include_unofficial)
 
         query = f'''
             WITH track_records AS (
@@ -2685,7 +2691,7 @@ Download Rulebook
                 JOIN drivers d ON l.driver_id = d.driver_id
                 WHERE l.is_valid_for_best = 1
                   AND l.lap_time > 0
-                  AND s.competition_id IS NOT NULL
+                  AND {session_filter}
                   AND {trust_filter}
                 GROUP BY s.track_name
             )
@@ -2706,7 +2712,7 @@ Download Rulebook
             LEFT JOIN competitions c ON s.competition_id = c.competition_id
             LEFT JOIN championships ch ON c.championship_id = ch.championship_id
             WHERE l.is_valid_for_best = 1
-              AND s.competition_id IS NOT NULL
+              AND {session_filter}
               AND {trust_filter}
             GROUP BY tr.track_name
             ORDER BY tr.best_lap ASC
@@ -2714,10 +2720,11 @@ Download Rulebook
 
         return self.safe_sql_query(query)
     
-    def get_track_statistics(self, track_name: str, include_external: bool = False) -> Dict:
-        """Ottiene statistiche generali per la pista (solo competizioni ufficiali e piloti TFL)"""
+    def get_track_statistics(self, track_name: str, include_external: bool = False, include_unofficial: bool = False) -> Dict:
+        """Ottiene statistiche generali per la pista (competizioni ufficiali e piloti TFL di default)"""
         # Team + community di default, external opzionali
         trust_filter = "d.trust_level >= 0" if include_external else "d.trust_level >= 1"
+        session_filter = self.get_best_laps_session_filter(include_unofficial)
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -2738,7 +2745,7 @@ Download Rulebook
                 WHERE s.track_name = ?
                   AND l.is_valid_for_best = 1
                   AND l.lap_time > 0
-                  AND s.competition_id IS NOT NULL
+                  AND {session_filter}
                   AND {trust_filter}
             '''
 
@@ -2757,7 +2764,7 @@ Download Rulebook
                     WHERE s.track_name = ?
                       AND l.lap_time = ?
                       AND l.is_valid_for_best = 1
-                      AND s.competition_id IS NOT NULL
+                      AND {session_filter}
                       AND {trust_filter}
                     LIMIT 1
                 '''
@@ -2802,11 +2809,12 @@ Download Rulebook
             st.error(f"❌ Errore nel recupero statistiche pista: {e}")
             return {}
     
-    def get_track_leaderboard(self, track_name: str, include_external: bool = False) -> pd.DataFrame:
-        """Ottiene classifica best laps per pista (solo competizioni ufficiali e piloti TFL)"""
+    def get_track_leaderboard(self, track_name: str, include_external: bool = False, include_unofficial: bool = False) -> pd.DataFrame:
+        """Ottiene classifica best laps per pista (competizioni ufficiali e piloti TFL di default)"""
 
         # Team + community di default, external opzionali
         trust_filter = "d.trust_level >= 0" if include_external else "d.trust_level >= 1"
+        session_filter = self.get_best_laps_session_filter(include_unofficial)
 
         query = f'''
             WITH driver_best_laps AS (
@@ -2819,7 +2827,7 @@ Download Rulebook
                 WHERE s.track_name = ?
                   AND l.is_valid_for_best = 1
                   AND l.lap_time > 0
-                  AND s.competition_id IS NOT NULL
+                  AND {session_filter}
                   AND {trust_filter}
                 GROUP BY l.driver_id
             )
@@ -2841,7 +2849,7 @@ Download Rulebook
             LEFT JOIN championships ch ON c.championship_id = ch.championship_id
             WHERE s.track_name = ?
               AND l.is_valid_for_best = 1
-              AND s.competition_id IS NOT NULL
+              AND {session_filter}
               AND {trust_filter}
             GROUP BY dbl.driver_id
             ORDER BY dbl.best_lap ASC
@@ -2894,23 +2902,31 @@ Download Rulebook
             </div>
             """, unsafe_allow_html=True)
 
-        include_external = st.checkbox("🌍 Include External Drivers", value=False, key="best_laps_include_external")
+        # Filtri indipendenti: sessioni non ufficiali e piloti external (entrambi off di default)
+        filter_col1, filter_col2, _ = st.columns(3)
+        with filter_col1:
+            include_unofficial = st.checkbox(
+                "🎮 Include Unofficial Sessions", value=False, key="best_laps_include_unofficial",
+                help="Best laps from all sessions, including those outside official competitions"
+            )
+        with filter_col2:
+            include_external = st.checkbox("🌍 Include External Drivers", value=False, key="best_laps_include_external")
 
         if selected_track == "📊 General Summary":
             # Mostra riepilogo generale di tutte le piste
             st.markdown("---")
-            st.subheader("🏁 Track Records Summary")
-            self.show_all_tracks_summary(include_external)
+            st.subheader("🎮 All Sessions Best Laps" if include_unofficial else "🏆 Official Best Laps")
+            self.show_all_tracks_summary(include_external, include_unofficial)
 
         elif selected_track in tracks:
             # Mostra dettagli della pista specifica
             st.markdown("---")
-            self.show_track_details(selected_track, include_external)
+            self.show_track_details(selected_track, include_external, include_unofficial)
     
-    def show_all_tracks_summary(self, include_external: bool = False):
-        """Mostra riepilogo record per tutte le piste (solo competizioni ufficiali e piloti TFL)"""
+    def show_all_tracks_summary(self, include_external: bool = False, include_unofficial: bool = False):
+        """Mostra riepilogo best lap per tutte le piste (competizioni ufficiali e piloti TFL di default)"""
 
-        summary_df = self.get_all_tracks_summary(include_external)
+        summary_df = self.get_all_tracks_summary(include_external, include_unofficial)
         
         if summary_df.empty:
             st.warning("⚠️ No data available for tracks summary")
@@ -2942,8 +2958,10 @@ Download Rulebook
         )
 
         # Formatta colonna Race Type (Official Race o Time Attack)
-        summary_display['Type'] = summary_display['is_time_attack'].apply(
-            lambda x: "⏱️ Time Attack" if x == 1 else "🏁 Official Race"
+        summary_display['Type'] = summary_display.apply(
+            lambda row: "🎮 Unofficial" if pd.isna(row['competition_id'])
+            else ("⏱️ Time Attack" if row['is_time_attack'] == 1 else "🏁 Official Race"),
+            axis=1
         )
 
         # Formatta colonna Competition: concatena competition_name e championship_name
@@ -2951,7 +2969,7 @@ Download Rulebook
             lambda row: f"{row['competition_name']} - {row['championship_name']}"
             if pd.notna(row.get('competition_name')) and pd.notna(row.get('championship_name'))
             else (row.get('competition_name') if pd.notna(row.get('competition_name'))
-                  else (row.get('championship_name') if pd.notna(row.get('championship_name')) else "N/A")),
+                  else (row.get('championship_name') if pd.notna(row.get('championship_name')) else "-")),
             axis=1
         )
 
@@ -2959,7 +2977,7 @@ Download Rulebook
         columns_to_show = ['Pista', 'Record', 'driver_name', 'Type', 'Session', 'Data', 'Competition']
         column_names = {
             'Pista': 'Track',
-            'Record': 'Record',
+            'Record': 'Best Lap',
             'driver_name': 'Driver',
             'Type': 'Type',
             'Session': 'Session',
@@ -2976,7 +2994,7 @@ Download Rulebook
             hide_index=True,
             height=600,
             column_config={
-                'Record':      st.column_config.TextColumn('Record',  width='small'),
+                'Best Lap':    st.column_config.TextColumn('Best Lap', width='small'),
                 'Type':        st.column_config.TextColumn('Type',    width='medium'),
                 'Session':     st.column_config.TextColumn('Session', width='small'),
                 'Date':        st.column_config.TextColumn('Date',    width='small'),
@@ -3022,8 +3040,8 @@ Download Rulebook
         with col3:
             st.info(f"🎯 **{record_text}**")
     
-    def show_track_details(self, track_name: str, include_external: bool = False):
-        """Mostra dettagli completi per la pista selezionata (solo competizioni ufficiali e piloti TFL)"""
+    def show_track_details(self, track_name: str, include_external: bool = False, include_unofficial: bool = False):
+        """Mostra dettagli completi per la pista selezionata (competizioni ufficiali e piloti TFL di default)"""
 
         # Header pista
         st.markdown(f"""
@@ -3033,7 +3051,7 @@ Download Rulebook
         """, unsafe_allow_html=True)
 
         # Ottieni statistiche generali
-        track_stats = self.get_track_statistics(track_name, include_external)
+        track_stats = self.get_track_statistics(track_name, include_external, include_unofficial)
 
         if not any(track_stats.values()):
             st.warning("⚠️ No data available for this track")
@@ -3041,9 +3059,9 @@ Download Rulebook
 
         # Classifica Best Laps
         st.markdown("---")
-        st.subheader("🏆 Best Laps Leaderboard by Driver")
+        st.subheader("🎮 All Sessions Best Laps by Driver" if include_unofficial else "🏆 Official Best Laps by Driver")
 
-        leaderboard_df = self.get_track_leaderboard(track_name, include_external)
+        leaderboard_df = self.get_track_leaderboard(track_name, include_external, include_unofficial)
 
         if not leaderboard_df.empty:
             # Prepara display leaderboard
@@ -3081,8 +3099,10 @@ Download Rulebook
             )
 
             # Formatta colonna Race Type (Official Race o Time Attack)
-            leaderboard_display['Type'] = leaderboard_display['is_time_attack'].apply(
-                lambda x: "⏱️ Time Attack" if x == 1 else "🏁 Official Race"
+            leaderboard_display['Type'] = leaderboard_display.apply(
+                lambda row: "🎮 Unofficial" if pd.isna(row['competition_id'])
+                else ("⏱️ Time Attack" if row['is_time_attack'] == 1 else "🏁 Official Race"),
+                axis=1
             )
 
             # Formatta colonna Competition: concatena competition_name e championship_name
@@ -3090,7 +3110,7 @@ Download Rulebook
                 lambda row: f"{row['competition_name']} - {row['championship_name']}"
                 if pd.notna(row.get('competition_name')) and pd.notna(row.get('championship_name'))
                 else (row.get('competition_name') if pd.notna(row.get('competition_name'))
-                      else (row.get('championship_name') if pd.notna(row.get('championship_name')) else "N/A")),
+                      else (row.get('championship_name') if pd.notna(row.get('championship_name')) else "-")),
                 axis=1
             )
 
@@ -3099,7 +3119,7 @@ Download Rulebook
             column_names = {
                 'Pos': 'Pos',
                 'driver_name': 'Driver',
-                'Best Time': 'Best Time',
+                'Best Time': 'Best Lap',
                 'Gap': 'Gap',
                 'Type': 'Type',
                 'Session': 'Session',
@@ -3118,7 +3138,7 @@ Download Rulebook
                 height=500,
                 column_config={
                     'Pos':        st.column_config.TextColumn('Pos',      width='small'),
-                    'Best Time':  st.column_config.TextColumn('Best Time',width='small'),
+                    'Best Lap':   st.column_config.TextColumn('Best Lap', width='small'),
                     'Gap':        st.column_config.TextColumn('Gap',      width='small'),
                     'Type':       st.column_config.TextColumn('Type',     width='medium'),
                     'Session':    st.column_config.TextColumn('Session',  width='small'),
@@ -3946,6 +3966,236 @@ Download Rulebook
             st.metric("First → Last", total_gain_str)
 
 
+    def show_rating_report(self):
+        """Mostra la sezione Rating: classifica (vista A) e movimenti/cronaca (vista B)"""
+        st.header("📊 Rating :orange-badge[Experimental]")
+        st.caption("Experimental feature, just for fun — it does not affect championship standings.")
+
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='driver_ratings'")
+            has_table = cursor.fetchone() is not None
+            if not has_table or cursor.execute("SELECT COUNT(*) FROM driver_ratings").fetchone()[0] == 0:
+                st.info("Rating not available yet — it will appear after the first race.")
+                conn.close()
+                return
+
+            today = datetime.now(ZoneInfo("Europe/Rome")).strftime('%Y-%m-%d')
+            names = {row[0]: (row[1], row[2]) for row in
+                     cursor.execute("SELECT driver_id, last_name, trust_level FROM drivers").fetchall()}
+
+            def compact(markup: str) -> str:
+                """HTML su una riga sola (evita che Streamlit tratti l'indentazione come codice)"""
+                return "".join(line.strip() for line in markup.splitlines())
+
+            def label(driver_id: str) -> str:
+                name, trust = names.get(driver_id, (driver_id, 0))
+                icon = {2: '🏎️ ', 1: '💬 '}.get(trust, '')
+                return f"{icon}{name}"
+
+            # Banner TA live
+            cursor.execute("""
+                SELECT ts.competition_id, ts.track_name, ts.opened_at, c.date_end
+                FROM rating_ta_status ts
+                LEFT JOIN competitions c ON c.competition_id = ts.competition_id
+                WHERE ts.is_open = 1
+            """)
+            open_tas = cursor.fetchall()
+            for _, track, _, date_end in open_tas:
+                message = f"Time Attack <b>{escape(track)}</b> open — TA values are provisional"
+                if date_end:
+                    try:
+                        close_day = datetime.strptime(date_end[:10], '%Y-%m-%d') - timedelta(days=1)
+                        message += f" · closes on {close_day.strftime('%d/%m/%Y')}"
+                    except ValueError:
+                        pass
+                st.markdown(compact(f"""
+                <div style="padding: 0.6rem 0.9rem; border-radius: 8px; background: rgba(209,69,59,0.10); margin: 0.5rem 0 1rem 0; font-size: 0.95rem;">
+                    <span style="display: inline-block; padding: 2px 9px; border-radius: 10px; background: #d1453b; color: #fff; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; margin-right: 0.4rem;">LIVE</span>
+                    {message}
+                </div>
+                """), unsafe_allow_html=True)
+
+            # Banner TA chiuso: l'ultimo TA resta in evidenza finché non si apre il successivo
+            if not open_tas:
+                last_ta = cursor.execute("""
+                    SELECT track_name FROM rating_ta_status
+                    ORDER BY opened_at DESC LIMIT 1
+                """).fetchone()
+                if last_ta:
+                    st.markdown(compact(f"""
+                    <div style="padding: 0.6rem 0.9rem; border-radius: 8px; background: rgba(26,158,85,0.10); margin: 0.5rem 0 1rem 0; font-size: 0.95rem;">
+                        <span style="display: inline-block; padding: 2px 9px; border-radius: 10px; background: #1a9e55; color: #fff; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; margin-right: 0.4rem;">CLOSED</span>
+                        Time Attack <b>{escape(last_ta[0])}</b> closed — ratings consolidated
+                    </div>
+                    """), unsafe_allow_html=True)
+
+            # Inizio "settimana": apertura del TA più recente
+            week_start = cursor.execute("SELECT MAX(opened_at) FROM rating_ta_status").fetchone()[0] or ''
+
+            ratings = cursor.execute("""
+                SELECT driver_id, rating, events_count
+                FROM driver_ratings ORDER BY rating DESC
+            """).fetchall()
+
+            movements = cursor.execute("""
+                SELECT h.driver_id, e.event_time, h.delta, h.rating_after
+                FROM rating_history h
+                JOIN rating_events e ON e.event_id = h.event_id
+                WHERE e.event_type != 'ta_final'
+                ORDER BY e.event_time, e.event_id
+            """).fetchall()
+
+            # Attivi questa settimana: dall'apertura dell'ultimo TA (o ultimi 7 giorni se non c'è un TA)
+            active_since = week_start or (datetime.now(ZoneInfo("Europe/Rome")) - timedelta(days=7)).strftime('%Y-%m-%dT%H:%M:%S')
+            today_delta, week_delta, trend, active = {}, {}, {}, set()
+            for driver_id, event_time, delta, rating_after in movements:
+                if event_time >= active_since:
+                    active.add(driver_id)
+                if event_time[:10] == today:
+                    today_delta[driver_id] = today_delta.get(driver_id, 0.0) + delta
+                if week_start and event_time >= week_start:
+                    week_delta[driver_id] = week_delta.get(driver_id, 0.0) + delta
+                trend.setdefault(driver_id, []).append(rating_after)
+
+            def signed(value: Optional[float]) -> str:
+                if value is None or abs(value) < 0.05:
+                    return "–"
+                return f"{'▲' if value > 0 else '▼'} {abs(value):.1f}"
+
+            def arrow_color(value: str) -> str:
+                if value.startswith('▲'):
+                    return 'color: #1a9e55; font-weight: bold'
+                if value.startswith('▼'):
+                    return 'color: #d1453b; font-weight: bold'
+                return 'color: #999999'
+
+            # Vista A - Classifica (valida dal primo evento)
+            rows = []
+            st.subheader("🏆 Rating Standings")
+            only_active = st.checkbox("Only drivers active this week", value=False, key="rating_only_active")
+            for position, (driver_id, rating, events_count) in enumerate(ratings, start=1):
+                if only_active and driver_id not in active:
+                    continue
+                rows.append({
+                    '#': position,
+                    'Driver': label(driver_id),
+                    'Rating': int(round(rating)),
+                    'Today': signed(today_delta.get(driver_id)),
+                    'Week': signed(week_delta.get(driver_id)),
+                    'Trend': trend.get(driver_id, [])[-10:],
+                    'Events': events_count,
+                })
+
+            if not rows:
+                st.info("No drivers active this week yet.")
+            styled = (pd.DataFrame(rows, columns=['#', 'Driver', 'Rating', 'Today', 'Week', 'Trend', 'Events']).style
+                      .map(lambda _: 'font-weight: bold', subset=['Rating'])
+                      .map(arrow_color, subset=['Today', 'Week']))
+            st.dataframe(
+                styled,
+                hide_index=True,
+                width='stretch',
+                column_config={
+                    '#': st.column_config.NumberColumn('#', width=40),
+                    'Driver': st.column_config.TextColumn('Driver', width='large'),
+                    'Rating': st.column_config.NumberColumn('Rating', width=70),
+                    'Today': st.column_config.TextColumn('Today', width=75),
+                    'Week': st.column_config.TextColumn('Week', width=75),
+                    'Trend': st.column_config.LineChartColumn('Trend', width='medium'),
+                    'Events': st.column_config.NumberColumn('Events', width=60),
+                },
+            )
+
+            # Vista B - Movimenti di oggi e cronaca
+            st.markdown("---")
+            st.subheader("📈 Today's Movers")
+
+            ta_laps_today = cursor.execute("""
+                SELECT COUNT(*) FROM laps l
+                JOIN sessions s ON s.session_id = l.session_id
+                WHERE s.is_time_attack = 1 AND substr(s.session_date, 1, 10) = ?
+            """, (today,)).fetchone()[0]
+
+            riser = '<span style="opacity: 0.45;">–</span>'
+            faller = riser
+            if today_delta and max(today_delta.values()) > 0:
+                top = max(today_delta, key=today_delta.get)
+                riser = f'<span style="color: #1a9e55;">{escape(label(top))} +{today_delta[top]:.1f}</span>'
+            if today_delta and min(today_delta.values()) < 0:
+                bottom = min(today_delta, key=today_delta.get)
+                faller = f'<span style="color: #d1453b;">{escape(label(bottom))} {today_delta[bottom]:.1f}</span>'
+
+            def mover_card(title: str, value: str) -> str:
+                return (f'<div style="flex: 1; min-width: 160px; border: 1px solid rgba(128,128,128,0.3); '
+                        f'border-radius: 8px; padding: 0.6rem 0.8rem;">'
+                        f'<div style="font-size: 0.8rem; opacity: 0.7;">{title}</div>'
+                        f'<div style="font-size: 1.15rem; font-weight: 700; margin-top: 0.2rem;">{value}</div></div>')
+
+            st.markdown(
+                '<div style="display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1rem;">'
+                + mover_card("🚀 Top riser today", riser)
+                + mover_card("📉 Top faller today", faller)
+                + mover_card("⏱️ TA laps today", str(ta_laps_today))
+                + '</div>', unsafe_allow_html=True)
+
+            st.subheader("📰 Latest Rating News")
+            events = cursor.execute("""
+                SELECT event_id, event_type, event_time, track_name, field_size
+                FROM rating_events ORDER BY event_time DESC, event_id DESC LIMIT 20
+            """).fetchall()
+
+            lines = []
+            for event_id, event_type, event_time, track, field_size in events:
+                hour = event_time[11:16]
+                day = event_time[:10]
+                if event_type == 'ta_live':
+                    details = cursor.execute("""
+                        SELECT driver_id, delta, details FROM rating_history
+                        WHERE event_id = ? ORDER BY delta DESC
+                    """, (event_id,)).fetchall()
+                    for driver_id, delta, details_json in details:
+                        info = json.loads(details_json) if details_json else {}
+                        if not info.get('improved'):
+                            continue  # salito/sceso solo perché un altro ha migliorato
+                        best = self.format_lap_time(info.get('best_ms'))
+                        prev = info.get('prev_best_ms')
+                        overtaken = info.get('overtaken') or []
+                        names_list = ", ".join(f"**{label(o)}**" for o in overtaken)
+                        if prev:
+                            action = f"improves in TA ({self.format_lap_time(prev)} → {best})"
+                            passes = f", passes {names_list}" if overtaken else ""
+                        else:
+                            action = f"sets first TA time ({best})"
+                            passes = f", ahead of {names_list}" if overtaken else ""
+                        color = 'green' if delta > 0 else 'red' if delta < 0 else 'gray'
+                        lines.append(f"🕘 {day} {hour} · **{label(driver_id)}** {action}{passes}"
+                                     f" → :{color}[**{delta:+.1f}**]")
+                else:
+                    winner = cursor.execute("""
+                        SELECT driver_id FROM rating_history WHERE event_id = ? ORDER BY position LIMIT 1
+                    """, (event_id,)).fetchone()
+                    winner_label = label(winner[0]) if winner else '–'
+                    if event_type == 'unofficial_race':
+                        lines.append(f"🏁 {day} {hour} · Unofficial race at {track} ({field_size} drivers)"
+                                     f" · winner **{winner_label}**")
+                    elif event_type == 'official_race':
+                        lines.append(f"🏆 {day} · Official race at {track} · winner **{winner_label}**")
+                    elif event_type == 'ta_final':
+                        lines.append(f"✅ {day} · Time Attack {track} closed · ratings consolidated")
+
+            conn.close()
+
+            if lines:
+                st.markdown("  \n".join(lines))
+            else:
+                st.info("No rating events yet.")
+
+        except Exception as e:
+            st.error(f"❌ Error loading rating: {e}")
+
 def main():
     """Funzione principale dell'applicazione"""
     try:
@@ -3970,6 +4220,7 @@ def main():
                 "⏱️ Time Attack",
                 "🏁 Competitions",
                 "🏆 Standings",
+                "📊 Rating",
                 "📅 Sessions",
                 "⚡ Best Laps",
                 "👥 Drivers",
@@ -3992,6 +4243,9 @@ def main():
 
         elif page == "🏆 Standings":
             dashboard.show_leagues_report()
+
+        elif page == "📊 Rating":
+            dashboard.show_rating_report()
 
         elif page == "📅 Sessions":
             dashboard.show_sessions_report()
