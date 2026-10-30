@@ -3982,7 +3982,8 @@ Download Rulebook
                 conn.close()
                 return
 
-            today = datetime.now(ZoneInfo("Europe/Rome")).strftime('%Y-%m-%d')
+            now_rome = datetime.now(ZoneInfo("Europe/Rome"))
+            last_24h = (now_rome - timedelta(hours=24)).strftime('%Y-%m-%dT%H:%M:%S')
             names = {row[0]: (row[1], row[2]) for row in
                      cursor.execute("SELECT driver_id, last_name, trust_level FROM drivers").fetchall()}
 
@@ -4032,8 +4033,10 @@ Download Rulebook
                     </div>
                     """), unsafe_allow_html=True)
 
-            # Inizio "settimana": apertura del TA più recente
-            week_start = cursor.execute("SELECT MAX(opened_at) FROM rating_ta_status").fetchone()[0] or ''
+            # Inizio "settimana": apertura del TA più recente, ma non oltre 7 giorni fa (pause tra campionati / nessun TA)
+            ta_opened = cursor.execute("SELECT MAX(opened_at) FROM rating_ta_status").fetchone()[0] or ''
+            seven_days_ago = (now_rome - timedelta(days=7)).strftime('%Y-%m-%dT%H:%M:%S')
+            week_start = max(ta_opened, seven_days_ago)
 
             ratings = cursor.execute("""
                 SELECT driver_id, rating, events_count
@@ -4048,17 +4051,15 @@ Download Rulebook
                 ORDER BY e.event_time, e.event_id
             """).fetchall()
 
-            # Attivi questa settimana: dall'apertura dell'ultimo TA (o ultimi 7 giorni se non c'è un TA)
-            active_since = week_start or (datetime.now(ZoneInfo("Europe/Rome")) - timedelta(days=7)).strftime('%Y-%m-%dT%H:%M:%S')
             today_delta, week_delta, trend, active = {}, {}, {}, set()
             for driver_id, event_time, delta, rating_after in movements:
-                if event_time >= active_since:
-                    active.add(driver_id)
-                if event_time[:10] == today:
+                if event_time >= last_24h:
                     today_delta[driver_id] = today_delta.get(driver_id, 0.0) + delta
-                if week_start and event_time >= week_start:
+                if event_time >= week_start:
+                    active.add(driver_id)
                     week_delta[driver_id] = week_delta.get(driver_id, 0.0) + delta
-                trend.setdefault(driver_id, []).append(rating_after)
+                # Il primo punto è il rating prima del primo evento, così si vede da dove si parte
+                trend.setdefault(driver_id, [rating_after - delta]).append(rating_after)
 
             def signed(value: Optional[float]) -> str:
                 if value is None or abs(value) < 0.05:
@@ -4083,26 +4084,26 @@ Download Rulebook
                     '#': position,
                     'Driver': label(driver_id),
                     'Rating': int(round(rating)),
-                    'Today': signed(today_delta.get(driver_id)),
+                    '24h': signed(today_delta.get(driver_id)),
                     'Week': signed(week_delta.get(driver_id)),
-                    'Trend': trend.get(driver_id, [])[-10:],
+                    'Trend': trend.get(driver_id, [])[-11:],
                     'Events': events_count,
                 })
 
             if not rows:
                 st.info("No drivers active this week yet.")
-            styled = (pd.DataFrame(rows, columns=['#', 'Driver', 'Rating', 'Today', 'Week', 'Trend', 'Events']).style
+            styled = (pd.DataFrame(rows, columns=['#', 'Driver', 'Rating', '24h', 'Week', 'Trend', 'Events']).style
                       .map(lambda _: 'font-weight: bold', subset=['Rating'])
-                      .map(arrow_color, subset=['Today', 'Week']))
+                      .map(arrow_color, subset=['24h', 'Week']))
             st.dataframe(
                 styled,
                 hide_index=True,
                 width='stretch',
                 column_config={
                     '#': st.column_config.NumberColumn('#', width=40),
-                    'Driver': st.column_config.TextColumn('Driver', width='large'),
+                    'Driver': st.column_config.TextColumn('Driver', width=160),
                     'Rating': st.column_config.NumberColumn('Rating', width=70),
-                    'Today': st.column_config.TextColumn('Today', width=75),
+                    '24h': st.column_config.TextColumn('24h', width=75),
                     'Week': st.column_config.TextColumn('Week', width=75),
                     'Trend': st.column_config.LineChartColumn('Trend', width='medium'),
                     'Events': st.column_config.NumberColumn('Events', width=60),
@@ -4111,13 +4112,13 @@ Download Rulebook
 
             # Vista B - Movimenti di oggi e cronaca
             st.markdown("---")
-            st.subheader("📈 Today's Movers")
+            st.subheader("📈 Last 24h Movers")
 
             ta_laps_today = cursor.execute("""
                 SELECT COUNT(*) FROM laps l
                 JOIN sessions s ON s.session_id = l.session_id
-                WHERE s.is_time_attack = 1 AND substr(s.session_date, 1, 10) = ?
-            """, (today,)).fetchone()[0]
+                WHERE s.is_time_attack = 1 AND s.session_date >= ?
+            """, (last_24h,)).fetchone()[0]
 
             riser = '<span style="opacity: 0.45;">–</span>'
             faller = riser
@@ -4136,9 +4137,9 @@ Download Rulebook
 
             st.markdown(
                 '<div style="display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1rem;">'
-                + mover_card("🚀 Top riser today", riser)
-                + mover_card("📉 Top faller today", faller)
-                + mover_card("⏱️ TA laps today", str(ta_laps_today))
+                + mover_card("🚀 Top riser (24h)", riser)
+                + mover_card("📉 Top faller (24h)", faller)
+                + mover_card("⏱️ TA laps (24h)", str(ta_laps_today))
                 + '</div>', unsafe_allow_html=True)
 
             st.subheader("📰 Latest Rating News")
