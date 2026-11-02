@@ -4221,9 +4221,9 @@ def main():
                 "⏱️ Time Attack",
                 "🏁 Competitions",
                 "🏆 Standings",
-                "📊 Rating",
                 "📅 Sessions",
                 "⚡ Best Laps",
+                "📊 Rating",
                 "👥 Drivers",
                 "📈 Statistics"
             ]
