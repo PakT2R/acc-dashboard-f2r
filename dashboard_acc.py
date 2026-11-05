@@ -26,6 +26,17 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+
+def is_ta_expired(date_end: Optional[str], now: Optional[datetime] = None) -> bool:
+    """Time Attack finito: dalle 00:00 (ora italiana) di date_end. Senza data valida non è finito."""
+    if now is None:
+        now = datetime.now(ZoneInfo("Europe/Rome")).replace(tzinfo=None)
+    try:
+        return now >= datetime.strptime(date_end[:10], '%Y-%m-%d')
+    except (TypeError, ValueError):
+        return False
+
+
 class ACCWebDashboard:
     """Classe principale per il dashboard web ACC"""
     
@@ -1068,14 +1079,7 @@ Download Rulebook
 
                 # Determina se la competizione è scaduta (data sistema >= date_end, usando timezone italiano)
                 from datetime import datetime, timedelta
-                is_expired = False
-                if date_end:
-                    try:
-                        end_date = datetime.strptime(date_end, '%Y-%m-%d')
-                        now_italy = datetime.now(ZoneInfo("Europe/Rome")).replace(tzinfo=None)
-                        is_expired = now_italy >= end_date
-                    except:
-                        is_expired = False
+                is_expired = is_ta_expired(date_end)
 
                 # Crea DataFrame
                 data = []
@@ -4003,7 +4007,9 @@ Download Rulebook
                 LEFT JOIN competitions c ON c.competition_id = ts.competition_id
                 WHERE ts.is_open = 1
             """)
-            open_tas = cursor.fetchall()
+            # Stessa regola della pagina Time Attack: da date_end il TA è finito, anche se il rating
+            # lo consolida solo all'arrivo della gara ufficiale (i valori non si muovono più)
+            open_tas = [ta for ta in cursor.fetchall() if not is_ta_expired(ta[3])]
             for _, track, _, date_end in open_tas:
                 message = f"Time Attack <b>{escape(track)}</b> open — TA values are provisional"
                 if date_end:
