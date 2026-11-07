@@ -4182,12 +4182,19 @@ Download Rulebook
                                      f" → :{color}[**{delta:+.1f}**]")
                 else:
                     winner = cursor.execute("""
-                        SELECT driver_id FROM rating_history WHERE event_id = ? ORDER BY position LIMIT 1
+                        SELECT driver_id, details FROM rating_history WHERE event_id = ? ORDER BY position LIMIT 1
                     """, (event_id,)).fetchone()
                     winner_label = label(winner[0]) if winner else '–'
                     if event_type == 'unofficial_race':
                         lines.append(f"🏁 {day} {hour} · Unofficial race at {track} ({field_size} drivers)"
                                      f" · winner **{winner_label}**")
+                        # Piloti entrati a gara iniziata, esclusi dal rating (scritti da rating_acc.py)
+                        info = json.loads(winner[1]) if winner and winner[1] else {}
+                        late = info.get('late_entries') or []
+                        if late:
+                            late_list = ", ".join(f"**{label(e['driver_id'])}** (leader on lap {e['leader_laps']})"
+                                                  for e in late)
+                            lines.append(f"&nbsp;&nbsp;&nbsp;&nbsp;⏱️ late entry, not rated: {late_list}")
                     elif event_type == 'official_race':
                         lines.append(f"🏆 {day} · Official race at {track} · winner **{winner_label}**")
                     elif event_type == 'ta_final':
