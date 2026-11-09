@@ -1068,6 +1068,19 @@ Download Rulebook
                 """, (comp_id,))
 
                 ta_results = cursor.fetchall()
+
+                # Dati per la griglia di partenza (stesso ordine e stessi filtri della leaderboard)
+                cursor.execute("""
+                    SELECT d.last_name, d.preferred_race_number, tar.best_lap_time, tar.is_enrolled
+                    FROM time_attack_results tar
+                    JOIN drivers d ON tar.driver_id = d.driver_id
+                    WHERE tar.competition_id = ?
+                        AND tar.best_lap_time IS NOT NULL
+                        AND tar.best_lap_time > 30000
+                        AND tar.best_lap_time < 3600000
+                    ORDER BY tar.best_lap_time ASC
+                """, (comp_id,))
+                grid_source = cursor.fetchall()
                 conn.close()
 
                 if not ta_results:
@@ -1155,6 +1168,10 @@ Download Rulebook
                     }
                 )
 
+                # Griglia di partenza (provvisoria finché il TA è aperto)
+                st.markdown("---")
+                self.render_starting_grid(grid_source, is_expired, comp_id)
+
                 # Grafico scostamento dal tempo medio
                 st.markdown("---")
 
@@ -1211,6 +1228,60 @@ Download Rulebook
 
         except Exception as e:
             st.error(f"❌ Error loading Time Attack data: {e}")
+
+    def render_starting_grid(self, ta_drivers, is_final: bool, comp_id: int):
+        """Griglia di partenza dal TA: iscritti invertiti, guest alla propria posizione TA
+        (stesso algoritmo di mreport_acc.show_starting_grid / entrylist_acc).
+        ta_drivers: (last_name, race_number, best_lap_ms, is_enrolled) ordinati dal più veloce."""
+        import html as html_lib
+
+        if not ta_drivers:
+            return
+
+        total = len(ta_drivers)
+        guest_ta_pos = [i for i, d in enumerate(ta_drivers, 1) if not d[3]]
+        enrolled_ta_pos = [i for i, d in enumerate(ta_drivers, 1) if d[3]]
+        free_positions = [p for p in range(1, total + 1) if p not in set(guest_ta_pos)]
+        grid_of = dict(zip(reversed(enrolled_ta_pos), free_positions))
+        grid_of.update({p: p for p in guest_ta_pos})
+        grid = sorted(((grid_of[i], *d) for i, d in enumerate(ta_drivers, 1)), key=lambda g: g[0])
+
+        badge = ('<span style="background:#44BB44;color:#fff;padding:2px 8px;border-radius:4px;'
+                 'font-size:0.75rem;font-weight:700;">FINAL</span>' if is_final else
+                 '<span style="background:#FF4444;color:#fff;padding:2px 8px;border-radius:4px;'
+                 'font-size:0.75rem;font-weight:700;">PROVISIONAL</span>')
+        head_col, side_col = st.columns([3, 1])
+        with head_col:
+            st.markdown(f'<h3 style="margin:0;">🏁 Starting Grid {badge}</h3>', unsafe_allow_html=True)
+        with side_col:
+            pole_side = st.radio("Pole side", ["SX", "DX"], horizontal=True,
+                                 key=f"grid_pole_side_{comp_id}", label_visibility="collapsed")
+
+        pole_col = 1 if pole_side == "SX" else 2
+        cards = []
+        for idx, (pos, name, race_num, best_ms, is_enrolled) in enumerate(grid):
+            col = pole_col if pos % 2 == 1 else 3 - pole_col
+            accent = '#4ECDC4' if is_enrolled else '#888888'
+            icon = '👤' if is_enrolled else '👻'
+            num = f"#{race_num}" if race_num is not None else "#?"
+            cards.append(
+                f'<div style="grid-column:{col};grid-row:{idx + 1} / span 2;'
+                f'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);'
+                f'border-left:4px solid {accent};border-radius:6px;padding:6px 10px;min-width:0;">'
+                f'<div style="display:flex;justify-content:space-between;font-size:0.8rem;opacity:0.85;">'
+                f'<span><b style="color:{accent};">P{pos}</b>&nbsp;&nbsp;{num}</span><span>{icon}</span></div>'
+                f'<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+                f'{html_lib.escape(name)}</div>'
+                f'<div style="font-size:0.75rem;opacity:0.7;font-family:monospace;">'
+                f'{self.format_lap_time(best_ms)}</div></div>')
+
+        st.markdown(
+            '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));'
+            'grid-auto-rows:36px;gap:4px 14px;max-width:520px;margin:10px 0;">'
+            + "".join(cards) + '</div>', unsafe_allow_html=True)
+        st.caption("🏁 Grid from Time Attack: registered drivers 👤 inverted (fastest starts last), "
+                   "guests 👻 keep their TA position. Drivers without a TA time start at the back."
+                   + ("" if is_final else " Provisional until the Time Attack closes."))
 
 
     # ==================== RACE RESULTS ====================
