@@ -49,6 +49,9 @@ class ACCWebDashboard:
         self.db_path = self.get_database_path()
         # Lega forzata per tutte le pagine (selezione lega visualizzata ma disabilitata)
         self.league_id = 1
+        # Banner della lega nelle sezioni: nascosto finché gestiamo una sola community.
+        # Mettere True per riattivarlo (multi-community).
+        self.show_league_banner = False
         #self.is_github_deployment = self.detect_github_deployment()
         
         # Verifica esistenza database
@@ -166,13 +169,21 @@ class ACCWebDashboard:
         st.markdown("""
         <style>
         /* CSS esistente + miglioramenti */
-        .main-header {
+        /* Blu notte, come la striscia sotto banner.jpg in homepage */
+        .main-header, .league-header {
             text-align: center;
-            padding: 2rem 0;
-            background: linear-gradient(90deg, #1f4e79, #2d5a87);
+            padding: 1rem 1.5rem;
+            background: linear-gradient(135deg, #0a1a4a, #10257a);
             color: white;
-            border-radius: 10px;
-            margin-bottom: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 6px 25px rgba(0,0,0,0.3);
+            margin: 2rem 0;
+        }
+
+        .main-header h1, .main-header h2, .main-header h3, .main-header p,
+        .league-header h1, .league-header h2, .league-header h3, .league-header p {
+            color: white !important;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
         }
         
         .metric-card {
@@ -206,6 +217,7 @@ class ACCWebDashboard:
             margin: 1rem 0;
         }
         
+
         .competition-header {
             background: linear-gradient(135deg, #3d3d3d, #2a2a2a);
             color: white;
@@ -431,11 +443,14 @@ class ACCWebDashboard:
             st.warning(f"❌ League {self.league_id} not found in database")
             return None
 
+        if not self.show_league_banner:
+            return league_info
+
         name, season, start_date, end_date, description = league_info
 
-        # Header league con stile championship-header
+        # Header league: stesso blu notte del banner homepage
         header_html = f"""
-        <div class="championship-header">
+        <div class="league-header">
             <h2>🌟 {name}</h2>
         """
 
@@ -558,7 +573,7 @@ class ACCWebDashboard:
                     """, unsafe_allow_html=True)
 
             else:
-                # Fallback con il riquadro blu originale se non c'è il banner
+                # Fallback senza immagine: riquadro blu notte (stesso stile della striscia sotto banner.jpg)
                 community_name = self.config['community']['name']
                 community_description = self.config['community']['description']
                 st.markdown(f"""
@@ -828,7 +843,7 @@ Download Rulebook
 
             st.subheader("🗓️ Race Calendar")
 
-            # Stato gara rispetto alla data di sistema (timezone italiano, date_end esclusa come in Time Attack)
+            # Stato gara rispetto alla data di sistema (timezone italiano)
             now_italy = datetime.now(ZoneInfo("Europe/Rome")).replace(tzinfo=None)
 
             def parse_date(value):
@@ -847,17 +862,20 @@ Download Rulebook
                 start = parse_date(date_start)
                 end = parse_date(date_end)
 
-                if is_completed or (end and now_italy >= end):
+                # Fasi: TA da date_start al giorno prima di date_end, gara il giorno di date_end
+                if is_completed or (end and now_italy >= end + timedelta(days=1)):
                     status = "✅ Completed"
+                elif end and now_italy >= end:
+                    status = "🏁 Race day"
                 elif start and start <= now_italy:
-                    status = "🔴 In progress"
+                    status = "⏱️ Time Attack"
                 elif not next_marked:
                     status = "⏭️ Next"
                     next_marked = True
                 else:
                     status = "🔜 Upcoming"
 
-                if status == "🔴 In progress":
+                if status in ("🏁 Race day", "⏱️ Time Attack"):
                     next_marked = True
 
                 data.append({
@@ -873,7 +891,7 @@ Download Rulebook
 
             # Evidenzia la gara in corso o la prossima
             def highlight_row(row):
-                if row["Status"] in ("🔴 In progress", "⏭️ Next"):
+                if row["Status"] in ("🏁 Race day", "⏱️ Time Attack", "⏭️ Next"):
                     return ['font-weight: bold; color: #4ECDC4'] * len(row)
                 return [''] * len(row)
 
