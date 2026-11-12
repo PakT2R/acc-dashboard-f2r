@@ -323,7 +323,84 @@ class ACCWebDashboard:
         minutes = lap_time_ms // 60000
         seconds = (lap_time_ms % 60000) / 1000
         return f"{minutes}:{seconds:06.3f}"
-    
+
+    def format_total_time(self, time_ms, lap_count=None, is_race: bool = False) -> str:
+        """Tempo totale sessione in M:SS.mmm.
+
+        Niente filtri anti-anomalia dei tempi giro (una gara può superare 1h).
+        2147483647 (INT32_MAX) è il segnaposto ACC per "nessun tempo";
+        in gara 0 giri = DNS (stessa logica del report mobile).
+        """
+        if is_race and (pd.isna(lap_count) or not lap_count):
+            return "DNS"
+        if pd.isna(time_ms) or not time_ms or time_ms <= 0 or time_ms >= 2147483647:
+            return "N/A"
+        time_ms = int(time_ms)
+        minutes = time_ms // 60000
+        seconds = (time_ms % 60000) / 1000
+        return f"{minutes}:{seconds:06.3f}"
+
+    @staticmethod
+    def format_penalty(pen_type, pen_val, violation_lap, cleared_lap) -> str:
+        """Descrizione compatta di una penalità ACC (stessa logica di mreport_acc._format_penalty).
+
+        - DriveThrough: penaltyValue = giri a disposizione per scontarla
+        - StopAndGo_N: i secondi sono nel nome del tipo (penaltyValue non è in secondi)
+        - None: evento senza sanzione, ACC riporta solo il giro di chiusura
+        - PostRaceTime: penaltyValue = secondi aggiunti
+        """
+        pen_type = pen_type or ""
+        pen_val = pen_val or 0
+
+        def join(*parts):
+            return " ".join(p for p in parts if p)
+
+        if pen_type == "None":
+            return join("No sanction", f"L{cleared_lap}" if (cleared_lap or 0) > 0 else "")
+        # ACC usa 0/-1 quando il giro non è significativo
+        lap_str = f"L{violation_lap}" if (violation_lap or 0) > 0 else ""
+        if pen_type == "DriveThrough":
+            serve = f"within {pen_val} lap{'s' if pen_val != 1 else ''}" if pen_val > 0 else ""
+            return join("DT", lap_str, serve)
+        if pen_type.startswith("StopAndGo"):
+            secs = pen_type.split("_", 1)[1] if "_" in pen_type else ""
+            return join("S&G", f"{secs}s" if secs.isdigit() else "", lap_str)
+        if pen_type == "PostRaceTime":
+            return f"+{pen_val}s post-race"
+        if pen_type == "Disqualified":
+            return join("DSQ", lap_str)
+        return join(pen_type[:14], lap_str)
+
+    def get_session_penalties(self, session_id) -> pd.DataFrame:
+        """Penalità della sessione, ordinate per pilota e giro effettivo"""
+        query = """
+            SELECT d.last_name AS driver, p.penalty_type, p.penalty_value,
+                   p.violation_lap, p.cleared_lap
+            FROM penalties p
+            JOIN drivers d ON p.driver_id = d.driver_id
+            WHERE p.session_id = ?
+            ORDER BY d.last_name,
+                     CASE WHEN p.violation_lap > 0 THEN p.violation_lap ELSE p.cleared_lap END
+        """
+        return self.safe_sql_query(query, [session_id])
+
+    def show_session_penalties(self, session_id):
+        """Mostra le penalità della sessione sotto la tabella risultati (se presenti)"""
+        pen_df = self.get_session_penalties(session_id)
+        if pen_df is None or pen_df.empty:
+            return
+        pen_df['Penalty'] = pen_df.apply(
+            lambda r: self.format_penalty(r['penalty_type'], r['penalty_value'],
+                                          r['violation_lap'], r['cleared_lap']),
+            axis=1
+        )
+        st.markdown("**⚠️ Penalties**")
+        st.dataframe(
+            pen_df[['driver', 'Penalty']].rename(columns={'driver': 'Driver'}),
+            width='stretch',
+            hide_index=True
+        )
+
     def get_database_stats(self) -> Dict:
         """Ottiene statistiche generali dal database con gestione errori migliorata"""
         try:
@@ -1640,8 +1717,10 @@ Download Rulebook
                             )
 
                             # Formatta tempo totale
-                            session_display['Total Time'] = session_display['total_time'].apply(
-                                lambda x: self.format_lap_time(x) if pd.notna(x) else "N/A"
+                            is_race = str(session_type).upper().startswith('R')
+                            session_display['Total Time'] = session_display.apply(
+                                lambda r: self.format_total_time(r['total_time'], r['lap_count'], is_race),
+                                axis=1
                             )
 
                             # Crea colonna Type con icona (persona per iscritti al campionato, ghost per guest)
@@ -1689,6 +1768,9 @@ Download Rulebook
                                     "Laps": st.column_config.TextColumn("Laps", width="small")
                                 }
                             )
+
+                            # Penalità della sessione (stessa forma del report mobile)
+                            self.show_session_penalties(session_id)
                         else:
                             st.warning(f"⚠️ No results found for {session_type}")
                 else:
@@ -2561,8 +2643,10 @@ Download Rulebook
             )
             
             # Formatta tempo totale
-            session_display['Total Time'] = session_display['total_time'].apply(
-                lambda x: self.format_lap_time(x) if pd.notna(x) else "N/A"
+            is_race = str(session_type).upper().startswith('R')
+            session_display['Total Time'] = session_display.apply(
+                lambda r: self.format_total_time(r['total_time'], r['lap_count'], is_race),
+                axis=1
             )
             
             # Seleziona colonne da mostrare
@@ -2585,6 +2669,9 @@ Download Rulebook
                 width='stretch',
                 hide_index=True
             )
+
+            # Penalità della sessione (stessa forma del report mobile)
+            self.show_session_penalties(session_id)
             
             # Grafici se ci sono abbastanza dati
             if len(session_results_df) > 3:
