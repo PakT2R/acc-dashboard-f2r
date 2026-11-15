@@ -1384,12 +1384,14 @@ Download Rulebook
             icon = '👤' if is_enrolled else '👻'
             num = f"#{race_num}" if race_num is not None else "#?"
             time_label = self.format_lap_time(best_ms) if best_ms else "No TA"
+            # Posizione: verde con tempo TA, rossa senza (colori dei badge FINAL/PROVISIONAL)
+            pos_color = '#44BB44' if best_ms else '#FF4444'
             cards.append(
                 f'<div style="grid-column:{col};grid-row:{idx + 1} / span 2;'
                 f'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);'
                 f'border-left:4px solid {accent};border-radius:6px;padding:6px 10px;min-width:0;">'
                 f'<div style="display:flex;justify-content:space-between;font-size:0.8rem;opacity:0.85;">'
-                f'<span><b style="color:{accent};">P{pos}</b>&nbsp;&nbsp;{num}</span><span>{icon}</span></div>'
+                f'<span><span style="color:{pos_color};font-weight:800;">P{pos}</span>&nbsp;&nbsp;{num}</span><span>{icon}</span></div>'
                 f'<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
                 f'{html_lib.escape(name)}</div>'
                 f'<div style="font-size:0.75rem;opacity:0.7;font-family:monospace;">'
