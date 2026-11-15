@@ -1165,10 +1165,15 @@ Download Rulebook
                 ta_results = cursor.fetchall()
 
                 # Dati per la griglia di partenza (stesso ordine e stessi filtri della leaderboard)
+                # Iscritti/guest da championship_enrollments (stessa fonte di entrylist_acc)
                 cursor.execute("""
-                    SELECT d.last_name, d.preferred_race_number, tar.best_lap_time, tar.is_enrolled
+                    SELECT d.last_name, d.preferred_race_number, tar.best_lap_time,
+                           CASE WHEN ce.driver_id IS NOT NULL THEN 1 ELSE 0 END AS is_enrolled
                     FROM time_attack_results tar
                     JOIN drivers d ON tar.driver_id = d.driver_id
+                    JOIN competitions c ON c.competition_id = tar.competition_id
+                    LEFT JOIN championship_enrollments ce
+                           ON ce.driver_id = tar.driver_id AND ce.championship_id = c.championship_id
                     WHERE tar.competition_id = ?
                         AND tar.best_lap_time IS NOT NULL
                         AND tar.best_lap_time > 30000
@@ -1176,6 +1181,20 @@ Download Rulebook
                     ORDER BY tar.best_lap_time ASC
                 """, (comp_id,))
                 grid_source = cursor.fetchall()
+
+                # Iscritti senza TA: in coda per rating crescente (come entrylist_acc)
+                cursor.execute("""
+                    SELECT d.last_name, d.preferred_race_number, COALESCE(dr.rating, 1500) AS rating
+                    FROM championship_enrollments ce
+                    JOIN competitions c ON c.championship_id = ce.championship_id
+                    JOIN drivers d ON d.driver_id = ce.driver_id
+                    LEFT JOIN driver_ratings dr ON dr.driver_id = d.driver_id
+                    WHERE c.competition_id = ?
+                      AND d.driver_id NOT IN (SELECT driver_id FROM time_attack_results
+                                              WHERE competition_id = ?)
+                    ORDER BY rating ASC, d.last_name COLLATE NOCASE ASC
+                """, (comp_id, comp_id))
+                grid_no_ta = cursor.fetchall()
                 conn.close()
 
                 if not ta_results:
@@ -1265,7 +1284,7 @@ Download Rulebook
 
                 # Griglia di partenza (provvisoria finché il TA è aperto)
                 st.markdown("---")
-                self.render_starting_grid(grid_source, is_expired, comp_id)
+                self.render_starting_grid(grid_source, is_expired, comp_id, grid_no_ta)
 
                 # Grafico scostamento dal tempo medio
                 st.markdown("---")
@@ -1324,13 +1343,15 @@ Download Rulebook
         except Exception as e:
             st.error(f"❌ Error loading Time Attack data: {e}")
 
-    def render_starting_grid(self, ta_drivers, is_final: bool, comp_id: int):
+    def render_starting_grid(self, ta_drivers, is_final: bool, comp_id: int, no_ta_drivers=None):
         """Griglia di partenza dal TA: iscritti invertiti, guest alla propria posizione TA
         (stesso algoritmo di mreport_acc.show_starting_grid / entrylist_acc).
-        ta_drivers: (last_name, race_number, best_lap_ms, is_enrolled) ordinati dal più veloce."""
+        ta_drivers: (last_name, race_number, best_lap_ms, is_enrolled) ordinati dal più veloce.
+        no_ta_drivers: iscritti senza TA (last_name, race_number, rating), già in ordine
+        di rating crescente: partono dietro ai piloti TA."""
         import html as html_lib
 
-        if not ta_drivers:
+        if not ta_drivers and not no_ta_drivers:
             return
 
         total = len(ta_drivers)
@@ -1340,6 +1361,9 @@ Download Rulebook
         grid_of = dict(zip(reversed(enrolled_ta_pos), free_positions))
         grid_of.update({p: p for p in guest_ta_pos})
         grid = sorted(((grid_of[i], *d) for i, d in enumerate(ta_drivers, 1)), key=lambda g: g[0])
+        # Iscritti senza TA in coda: best_ms None, la card mostra "No TA"
+        grid += [(total + k, name, race_num, None, 1)
+                 for k, (name, race_num, _rating) in enumerate(no_ta_drivers or [], 1)]
 
         badge = ('<span style="background:#44BB44;color:#fff;padding:2px 8px;border-radius:4px;'
                  'font-size:0.75rem;font-weight:700;">FINAL</span>' if is_final else
@@ -1359,6 +1383,7 @@ Download Rulebook
             accent = '#4ECDC4' if is_enrolled else '#888888'
             icon = '👤' if is_enrolled else '👻'
             num = f"#{race_num}" if race_num is not None else "#?"
+            time_label = self.format_lap_time(best_ms) if best_ms else "No TA"
             cards.append(
                 f'<div style="grid-column:{col};grid-row:{idx + 1} / span 2;'
                 f'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);'
@@ -1368,14 +1393,15 @@ Download Rulebook
                 f'<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
                 f'{html_lib.escape(name)}</div>'
                 f'<div style="font-size:0.75rem;opacity:0.7;font-family:monospace;">'
-                f'{self.format_lap_time(best_ms)}</div></div>')
+                f'{time_label}</div></div>')
 
         st.markdown(
             '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));'
             'grid-auto-rows:36px;gap:4px 14px;max-width:520px;margin:10px 0;">'
             + "".join(cards) + '</div>', unsafe_allow_html=True)
         st.caption("🏁 Grid from Time Attack: registered drivers 👤 inverted (fastest starts last), "
-                   "guests 👻 keep their TA position. Drivers without a TA time start at the back."
+                   "guests 👻 keep their TA position. Registered drivers without a TA time start at the back, "
+                   "lowest rating first."
                    + ("" if is_final else " Provisional until the Time Attack closes."))
 
 
