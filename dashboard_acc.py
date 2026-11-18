@@ -821,7 +821,7 @@ Download Rulebook
 
         st.markdown(f"""
         - 🏎️ **Team Drivers:** {stats['total_drivers']}
-        - 💬 **Community Drivers:** {stats['friend_drivers']}
+        - 🤝 **Community Drivers:** {stats['friend_drivers']}
         - 🌍 **External Drivers:** {stats['guest_drivers']}
         - 🏆 **Championships:** {stats['total_championships']}
         - 🏁 **Competitions:** {stats['total_competitions']}
@@ -2878,6 +2878,11 @@ Download Rulebook
             st.error(f"❌ Errore nel recupero piste: {e}")
             return []
     
+    @staticmethod
+    def get_trust_icon(trust_level) -> str:
+        """Icona categoria pilota: 🏎️ team, 🤝 community, 🌍 external"""
+        return {2: '🏎️', 1: '🤝'}.get(trust_level, '🌍')
+
     def get_best_laps_session_filter(self, include_unofficial: bool = False) -> str:
         """Filtro sessioni per Best Laps: solo ufficiali di default, tutte se richiesto"""
         return "1 = 1" if include_unofficial else "s.competition_id IS NOT NULL"
@@ -2907,6 +2912,7 @@ Download Rulebook
                 tr.track_name,
                 tr.best_lap,
                 d.last_name as driver_name,
+                d.trust_level,
                 s.session_date,
                 s.session_type,
                 s.is_time_attack,
@@ -3041,6 +3047,7 @@ Download Rulebook
             )
             SELECT
                 d.last_name as driver_name,
+                d.trust_level,
                 d.short_name,
                 dbl.best_lap,
                 s.session_date,
@@ -3102,7 +3109,7 @@ Download Rulebook
             st.markdown(f"""
             <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; border-left: 3px solid #6c757d; margin: 1rem 0;">
                 <p style="color: #495057; margin: 0 0 0.5rem 0; font-size: 0.95rem; font-weight: 500;">
-                    ℹ️ Only 🏎️ team and 💬 community drivers shown by default - Join the TFL by registering on SimGrid or joining our Discord server
+                    ℹ️ Only 🏎️ team and 🤝 community drivers shown by default - Join the TFL by registering on SimGrid or joining our Discord server
                 </p>
                 <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem 1rem; margin-top: 0.8rem;">
                     {''.join(social_links)}
@@ -3181,12 +3188,17 @@ Download Rulebook
             axis=1
         )
 
+        # Pilota con icona di categoria
+        summary_display['driver_display'] = summary_display.apply(
+            lambda row: f"{self.get_trust_icon(row['trust_level'])} {row['driver_name']}", axis=1
+        )
+
         # Seleziona colonne finali (Type prima di Session)
-        columns_to_show = ['Pista', 'Record', 'driver_name', 'Type', 'Session', 'Data', 'Competition']
+        columns_to_show = ['Pista', 'Record', 'driver_display', 'Type', 'Session', 'Data', 'Competition']
         column_names = {
             'Pista': 'Track',
             'Record': 'Best Lap',
-            'driver_name': 'Driver',
+            'driver_display': 'Driver',
             'Type': 'Type',
             'Session': 'Session',
             'Data': 'Date',
@@ -3322,11 +3334,16 @@ Download Rulebook
                 axis=1
             )
 
+            # Pilota con icona di categoria
+            leaderboard_display['driver_display'] = leaderboard_display.apply(
+                lambda row: f"{self.get_trust_icon(row['trust_level'])} {row['driver_name']}", axis=1
+            )
+
             # Seleziona colonne finali (Type prima di Session)
-            columns_to_show = ['Pos', 'driver_name', 'Best Time', 'Gap', 'Type', 'Session', 'Record Date', 'Competition']
+            columns_to_show = ['Pos', 'driver_display', 'Best Time', 'Gap', 'Type', 'Session', 'Record Date', 'Competition']
             column_names = {
                 'Pos': 'Pos',
-                'driver_name': 'Driver',
+                'driver_display': 'Driver',
                 'Best Time': 'Best Lap',
                 'Gap': 'Gap',
                 'Type': 'Type',
@@ -3773,9 +3790,9 @@ Download Rulebook
             st.warning("❌ No drivers found in database")
             return
         
-        # Selectbox pilota con riepilogo generale come prima opzione (🏎️ team, 💬 community)
+        # Selectbox pilota con riepilogo generale come prima opzione (🏎️ team, 🤝 community)
         driver_labels = {
-            f"{'🏎️' if driver['trust_level'] == 2 else '💬'} {driver['last_name']}": driver
+            f"{self.get_trust_icon(driver['trust_level'])} {driver['last_name']}": driver
             for driver in drivers
         }
         driver_options = ["📊 General Summary"] + list(driver_labels)
@@ -3802,7 +3819,7 @@ Download Rulebook
             st.markdown(f"""
             <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; border-left: 3px solid #6c757d; margin: 1rem 0;">
                 <p style="color: #495057; margin: 0 0 0.5rem 0; font-size: 0.95rem; font-weight: 500;">
-                    ℹ️ Only 🏎️ team and 💬 community drivers shown - Join the TFL by registering on SimGrid or joining our Discord server
+                    ℹ️ Only 🏎️ team and 🤝 community drivers shown - Join the TFL by registering on SimGrid or joining our Discord server
                 </p>
                 <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem 1rem; margin-top: 0.8rem;">
                     {''.join(social_links)}
@@ -4201,8 +4218,7 @@ Download Rulebook
 
             def label(driver_id: str) -> str:
                 name, trust = names.get(driver_id, (driver_id, 0))
-                icon = {2: '🏎️ ', 1: '💬 '}.get(trust, '')
-                return f"{icon}{name}"
+                return f"{self.get_trust_icon(trust)} {name}"
 
             # Banner TA live
             cursor.execute("""
