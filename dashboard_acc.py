@@ -4309,7 +4309,7 @@ Download Rulebook
                 rows.append({
                     '#': position,
                     'Driver': label(driver_id),
-                    'Rating': int(round(rating)),
+                    'Rating': round(rating, 1),
                     '24h': signed(today_delta.get(driver_id)),
                     'Week': signed(week_delta.get(driver_id)),
                     'Trend': trend.get(driver_id, [])[-11:],
@@ -4319,6 +4319,7 @@ Download Rulebook
             if not rows:
                 st.info("No drivers active this week yet.")
             styled = (pd.DataFrame(rows, columns=['#', 'Driver', 'Rating', '24h', 'Week', 'Trend', 'Events']).style
+                      .format({'Rating': '{:.1f}'})
                       .map(lambda _: 'font-weight: bold', subset=['Rating'])
                       .map(arrow_color, subset=['24h', 'Week']))
             st.dataframe(
@@ -4328,7 +4329,7 @@ Download Rulebook
                 column_config={
                     '#': st.column_config.NumberColumn('#', width=40),
                     'Driver': st.column_config.TextColumn('Driver', width=160),
-                    'Rating': st.column_config.NumberColumn('Rating', width=70),
+                    'Rating': st.column_config.NumberColumn('Rating', width=70, format="%.1f"),
                     '24h': st.column_config.TextColumn('24h', width=75),
                     'Week': st.column_config.TextColumn('Week', width=75),
                     'Trend': st.column_config.LineChartColumn('Trend', width='medium'),
