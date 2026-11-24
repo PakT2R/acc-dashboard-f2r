@@ -1875,6 +1875,122 @@ Download Rulebook
         
         return self.safe_sql_query(query, [championship_id])
     
+    def show_standings_by_round(self, championship_id: int):
+        """Classifica campionato con i punti di ogni competizione (R1..Rn).
+
+        Costruita da competition_standings (nessuna colonna aggiuntiva in championship_standings).
+        Piloti e ordine da championship_standings. I risultati scartati (drop worst) sono
+        ricalcolati con la stessa regola di standings_acc: tenute le migliori total_rounds - drop_worst.
+        """
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT ch.total_rounds,
+                       (SELECT COALESCE(ps.drop_worst_results, 0)
+                        FROM competitions c
+                        LEFT JOIN points_systems ps ON c.points_system_json = ps.name
+                        WHERE c.championship_id = ch.championship_id
+                        LIMIT 1)
+                FROM championships ch
+                WHERE ch.championship_id = ?
+            """, (championship_id,))
+            row = cursor.fetchone()
+            total_rounds = (row[0] or 0) if row else 0
+            drop_worst = (row[1] or 0) if row else 0
+
+            cursor.execute("""
+                SELECT competition_id, round_number, track_name, name
+                FROM competitions
+                WHERE championship_id = ?
+                ORDER BY round_number, competition_id
+            """, (championship_id,))
+            competitions = cursor.fetchall()
+
+            cursor.execute("""
+                SELECT cs.driver_id, c.competition_id, cs.total_points
+                FROM competition_standings cs
+                JOIN competitions c ON cs.competition_id = c.competition_id
+                WHERE c.championship_id = ?
+                  AND cs.total_points IS NOT NULL
+            """, (championship_id,))
+            points = {(d, c): p for d, c, p in cursor.fetchall()}
+
+            cursor.execute("""
+                SELECT cs.position, cs.driver_id, d.last_name, cs.total_points
+                FROM championship_standings cs
+                JOIN drivers d ON cs.driver_id = d.driver_id
+                WHERE cs.championship_id = ?
+                ORDER BY cs.position
+            """, (championship_id,))
+            drivers = cursor.fetchall()
+        finally:
+            conn.close()
+
+        # Colonne R1..Rn: n = total_rounds del campionato (anche round non ancora creati/disputati)
+        n_rounds = max(total_rounds, len(competitions))
+        round_cols = [f"R{i}" for i in range(1, n_rounds + 1)]
+        comp_by_col = {}
+        for idx, (comp_id, round_number, track, name) in enumerate(competitions):
+            col = f"R{round_number}" if round_number else f"R{idx + 1}"
+            if col in round_cols and col not in comp_by_col:
+                comp_by_col[col] = (comp_id, track, name)
+
+        races_to_keep = total_rounds - drop_worst if total_rounds > 0 else None
+
+        rows, dropped_mask = [], []
+        for position, driver_id, driver_name, total in drivers:
+            pos_str = "🥇" if position == 1 else "🥈" if position == 2 else "🥉" if position == 3 else str(position)
+            row = {'Pos': pos_str, 'Driver': driver_name}
+            driver_points = []  # (punti, colonna) delle competizioni disputate
+            for col in round_cols:
+                comp = comp_by_col.get(col)
+                p = points.get((driver_id, comp[0])) if comp else None
+                row[col] = f"{p:.1f}" if p is not None else "-"
+                if p is not None:
+                    driver_points.append((p, col))
+            # Drop worst: stessa regola di standings_acc (scarta solo oltre races_to_keep)
+            dropped = set()
+            if drop_worst > 0 and races_to_keep is not None and len(driver_points) > races_to_keep:
+                ordered = sorted(driver_points, key=lambda x: x[0], reverse=True)
+                dropped = {col for _, col in ordered[races_to_keep:]}
+            row['Total Pts'] = f"{total:.1f}" if total is not None else "0.0"
+            rows.append(row)
+            dropped_mask.append(dropped)
+
+        df = pd.DataFrame(rows, columns=['Pos', 'Driver'] + round_cols + ['Total Pts'])
+
+        def style_cells(data):
+            styles = pd.DataFrame('', index=data.index, columns=data.columns)
+            styles['Total Pts'] = 'font-weight: bold; color: green;'
+            for i, dropped in enumerate(dropped_mask):
+                for col in dropped:
+                    styles.iloc[i, data.columns.get_loc(col)] = 'text-decoration: line-through; color: #999;'
+            return styles
+
+        column_config = {
+            # pinned: le colonne fissate non si allargano con la finestra
+            'Pos': st.column_config.TextColumn('Pos', width=60, pinned=True),
+            'Driver': st.column_config.TextColumn('Driver', width=150),
+            'Total Pts': st.column_config.TextColumn('Total Pts', width=80),
+        }
+        for col in round_cols:
+            comp = comp_by_col.get(col)
+            column_config[col] = st.column_config.TextColumn(
+                col, width=70, help=f"{comp[1]} — {comp[2]}" if comp else "Not yet scheduled"
+            )
+
+        st.dataframe(
+            df.style.apply(style_cells, axis=None),
+            column_config=column_config,
+            width='stretch',
+            hide_index=True,
+            height=35 * len(df) + 38
+        )
+        if drop_worst > 0:
+            st.caption(f"~~Struck-through~~ results are dropped (worst {drop_worst} of {total_rounds}). "
+                       "Total Pts includes penalties.")
+
     def show_leagues_report(self):
         """Mostra il report leagues"""
         st.header("Standings")
@@ -1969,9 +2085,19 @@ Download Rulebook
 
                         # Classifica championship
                         st.subheader("🏆 Standings")
+                        standings_view = st.radio(
+                            "View:",
+                            options=["📋 Summary", "🏁 Points by round"],
+                            horizontal=True,
+                            key="standings_view",
+                            label_visibility="collapsed"
+                        )
                         standings_df = self.get_championship_standings(champ_id)
 
-                        if not standings_df.empty:
+                        if not standings_df.empty and standings_view == "🏁 Points by round":
+                            self.show_standings_by_round(champ_id)
+
+                        elif not standings_df.empty:
                             # Ottieni drop_worst_results e total_rounds per questo championship
                             cursor.execute("""
                                 SELECT COALESCE(ps.drop_worst_results, 0) as drop_worst,
@@ -2025,8 +2151,8 @@ Download Rulebook
                             # Seleziona colonne da mostrare nell'ordine richiesto: Pos, Driver, Total, Gross, Drop, Pen | n Comps, n Wins, n Pods, n Poles, n FLaps
                             columns_to_show = [
                                 'Pos', 'driver', 'total_points', 'gross_points', 'points_dropped',
-                                'manual_penalties', 'competitions_participated', 'wins', 'podiums',
-                                'poles', 'fastest_laps'
+                                'manual_penalties', 'competitions_participated', 'wins',
+                                'poles', 'fastest_laps', 'podiums'
                             ]
 
                             # Rinomina colonne con i nomi corti
@@ -2063,7 +2189,8 @@ Download Rulebook
 
                             # Configura larghezza colonne (in pixel)
                             column_config = {
-                                'Pos': st.column_config.TextColumn('Pos', width=60),
+                                # pinned: le colonne fissate non si allargano con la finestra
+                                'Pos': st.column_config.TextColumn('Pos', width=60, pinned=True),
                                 'Driver': st.column_config.TextColumn('Driver', width=150),
                                 'Total Pts': st.column_config.TextColumn('Total Pts', width=80),
                                 'Gross Pts': st.column_config.TextColumn('Gross Pts', width=80),
@@ -2079,6 +2206,7 @@ Download Rulebook
                             # Mostra tabella senza indice e con altezza dinamica
                             st.dataframe(
                                 styled_standings,
+                                column_config={'Pos': column_config['Pos']},
                                 width='stretch',
                                 hide_index=True,
                                 height=35 * len(standings_display) + 38
