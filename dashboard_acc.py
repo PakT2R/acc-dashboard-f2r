@@ -297,6 +297,37 @@ class ACCWebDashboard:
                 font-size: 0.8rem;
             }
         }
+
+        /* Pulsante che riapre la sidebar (menu): ben visibile, soprattutto su mobile.
+           Selettore interno di Streamlit (verificato su 1.49): se dopo un aggiornamento
+           il pulsante torna anonimo, ricontrollare il data-testid. */
+        [data-testid="stExpandSidebarButton"] {
+            background: #ff6b00 !important;
+            color: white !important;
+            border-radius: 20px !important;
+            padding: 0.25rem 0.8rem 0.25rem 0.4rem !important;
+            margin-left: 0.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+            animation: tfl-menu-pulse 1.6s ease-in-out 3;
+        }
+        [data-testid="stExpandSidebarButton"] * {
+            color: white !important;
+            fill: white !important;
+        }
+        [data-testid="stExpandSidebarButton"]::after {
+            content: "MENU";
+            font-weight: 700;
+            font-size: 0.9rem;
+            letter-spacing: 0.05em;
+            margin-left: 0.2rem;
+        }
+        [data-testid="stExpandSidebarButton"]:hover {
+            background: #e05e00 !important;
+        }
+        @keyframes tfl-menu-pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.12); }
+        }
         </style>
         """, unsafe_allow_html=True)
 
